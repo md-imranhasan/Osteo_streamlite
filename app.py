@@ -1,29 +1,31 @@
+
+
+import os
+from pathlib import Path
 import streamlit as st
 import tensorflow as tf
 import numpy as np
 from PIL import Image
 
-# =========================================================
-# PAGE CONFIG
-# =========================================================
+
+
 st.set_page_config(
     page_title="Osteosarcoma Detection App",
     page_icon="🩺",
     layout="centered"
 )
 
-# =========================================================
-# MODEL PATHS
-# CHANGE THESE TO YOUR REAL MODEL PATHS
-# =========================================================
+
+st.write("XSRF:", st.get_option("server.enableXsrfProtection"))
+
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_DIR = BASE_DIR / "models"
+
 MODEL_PATHS = {
-    "3-Class Classification": r"E:\Purdue Spring 2026\Spring 2026 BIOL 59500\comparison_outputs\task_3class\DCNN\DCNN_final.keras",
-    "Tumor vs Non-Tumor": r"E:\Purdue Spring 2026\Spring 2026 BIOL 59500\comparison_outputs\task_tumor_vs_nontumor\DCNN\DCNN_final.keras"
+    "3-Class Classification": str(MODEL_DIR / "task_3class_dcnn.keras"),
+    "Tumor vs Non-Tumor": str(MODEL_DIR / "task_tumor_vs_nontumor_dcnn.keras")
 }
 
-# =========================================================
-# LABEL MAPS
-# =========================================================
 LABEL_MAPS = {
     "3-Class Classification": ["Non_Tumor", "Non_Viable_Tumor", "Viable_Tumor"],
     "Tumor vs Non-Tumor": ["Non_Tumor", "Tumor"]
@@ -31,10 +33,6 @@ LABEL_MAPS = {
 
 IMG_SIZE = (120, 120)
 
-# =========================================================
-# PREPROCESSING
-# SAME STYLE USED IN YOUR DCNN CODE
-# =========================================================
 def zscore_preprocess(x):
     x = x.astype("float32")
     mean = np.mean(x, axis=(0, 1), keepdims=True)
@@ -51,28 +49,21 @@ def prepare_image(uploaded_image):
     img_array = np.expand_dims(img_array, axis=0)
     return image, img_array
 
-# =========================================================
-# LOAD MODEL
-# =========================================================
 @st.cache_resource
 def load_model(model_path):
-    model = tf.keras.models.load_model(model_path)
-    return model
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model not found: {model_path}")
+    return tf.keras.models.load_model(model_path)
 
-# =========================================================
-# PREDICTION
-# =========================================================
 def predict_image(model, processed_img, task_name):
     preds = model.predict(processed_img, verbose=0)
 
     if task_name == "Tumor vs Non-Tumor":
         prob_tumor = float(preds[0][0])
         prob_non_tumor = 1.0 - prob_tumor
-
         probs = [prob_non_tumor, prob_tumor]
         pred_index = int(np.argmax(probs))
         pred_label = LABEL_MAPS[task_name][pred_index]
-
     else:
         probs = preds[0].tolist()
         pred_index = int(np.argmax(probs))
@@ -80,9 +71,6 @@ def predict_image(model, processed_img, task_name):
 
     return pred_label, probs
 
-# =========================================================
-# UI
-# =========================================================
 st.title("Osteosarcoma Histopathology Classification")
 st.write("Upload an image and choose a trained DCNN task.")
 
@@ -102,7 +90,7 @@ if uploaded_file is not None:
         display_img, processed_img = prepare_image(image)
 
         st.subheader("Uploaded Image")
-        st.image(display_img, caption="Input Image", use_container_width=True)
+        st.image(display_img, caption="Input Image", use_column_width=True)
 
         model_path = MODEL_PATHS[task_name]
         model = load_model(model_path)
@@ -114,11 +102,12 @@ if uploaded_file is not None:
             st.success(f"Predicted Class: {pred_label}")
 
             st.subheader("Prediction Probabilities")
-
             class_names = LABEL_MAPS[task_name]
+
             for class_name, prob in zip(class_names, probs):
+                prob = float(prob)
                 st.write(f"**{class_name}:** {prob:.4f}")
-                st.progress(float(prob))
+                st.progress(max(0.0, min(prob, 1.0)))
 
     except Exception as e:
         st.error(f"Error: {str(e)}")
